@@ -11,6 +11,8 @@
 
 # Computed Estimates 
 
+### Platform specification
+
 Running on n p-core nodes with:
 
   - floprate: A known per-core flop/sec rate
@@ -33,9 +35,24 @@ The estimate is computed as: rdata / (n * rbandwidth) + flops / (n * p * floprat
 
 The estimate is computed as: max(rdata / (n * rbandwidth)  + wdata / (n * wbandwidth), flops / (n * p * floprate))
  
+### Critical path approach
 
-### Critical path appraoch
+This estimate is computed using a level-by-level model of the execution. For
+each level, a makespan is computed, and the overall estimate is the sum of
+these makespans. The makespan for each level is compute as follows.
 
-TBD
-        
+The way in which the execution of a level proceeds is highly dependent on
+the scheduling algorithm used to allocate tasks to cores, so we're only
+after a reasonable estimate.  We model a level's execution consists of
+multiple phases in which each phase executes up to n * p tasks. So given a
+level with N tasks, the number of phases is ceil(N / (n * p)). The tasks
+are sorted by their I/O times + compute times assuming they run alone on
+the machine on a single core. In each phase, for each task in that phase,
+we compute their execution times accounting for I/O contention, and then
+say that the phase runs in time equal to the average task execution time.
+The goal is to have a broad approximation of task execution overlaps
+between different phases of the workflow.
+
+
+
 

@@ -8,19 +8,6 @@
  * (at your option) any later version.
  */
 
-/**
- ** This is the main function for a WRENCH simulator. The simulator takes
- ** a input an XML platform description file. It generates a workflow with
- ** a simple diamond structure, instantiates a few services on the platform, and
- ** starts an execution controller to execute the workflow using these services
- ** using a simple greedy algorithm.
- **/
-
-#define GFLOP (1000.0 * 1000.0 * 1000.0)
-#define TFLOP (1000.0 * 1000.0 * 1000.0 * 1000.0)
-#define MBYTE (1000.0 * 1000.0)
-#define GBYTE (1000.0 * 1000.0 * 1000.0)
-
 #include <iostream>
 #include <wrench-dev.h>
 #include <boost/program_options.hpp>
@@ -30,6 +17,10 @@
 #include <WfCommonsWorkflowParser.h>
 #include <boost/algorithm/string.hpp>
 
+#define GFLOP (1000.0 * 1000.0 * 1000.0)
+#define TFLOP (1000.0 * 1000.0 * 1000.0 * 1000.0)
+#define MBYTE (1000.0 * 1000.0)
+#define GBYTE (1000.0 * 1000.0 * 1000.0)
 
 namespace po = boost::program_options;
 
@@ -40,7 +31,11 @@ struct platform_spec {
 };
 
 std::map<std::string, struct platform_spec> platform_specs = {
-        { "summit", {148600.0 * TFLOP / 2414592, 1788.32 * GBYTE / 504, 2158.70 * GBYTE / 504}}
+        { "summit",
+          {148600.0 * TFLOP / 2414592,
+           1788.32 * GBYTE / 504,
+           2158.70 * GBYTE / 504}
+        }
 };
 
 double compute_total_flops(std::shared_ptr<wrench::Workflow> workflow) {

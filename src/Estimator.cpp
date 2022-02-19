@@ -142,7 +142,7 @@ double estimate_makespan_level(std::vector<std::shared_ptr<wrench::WorkflowTask>
     int num_batches = (int)(std::ceil((double) tasks.size() / (num_nodes * num_cores_per_node)));
     for (int i = 0; i < num_batches; i++) {
         int first_task = i * num_nodes * num_cores_per_node;
-        int last_task = (i+1) * num_nodes * num_cores_per_node - 1;
+        int last_task = std::min<int>(tasks.size() - 1, (i+1) * num_nodes * num_cores_per_node - 1);
         int num_tasks = last_task - first_task + 1;
         double io_contention = ((double)num_tasks / num_nodes);
         double sum_task_makespans = 0;

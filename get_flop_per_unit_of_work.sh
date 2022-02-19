@@ -1,6 +1,6 @@
 #!/bin/bash
 
-g++ --std=c++17 src/cpu-benchmark.cpp -o /tmp/cpu-benchmark
+g++ --std=c++17 src/cpu-benchmark.cpp -o /tmp/cpu-benchmark -lpthread
 gcc src/linpack.c -o /tmp/linpack
 
 CPU_BENCHMARK_WORK=100

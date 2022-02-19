@@ -58,54 +58,53 @@ std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSO
 
             int count = 0;
             for (auto &job : jobs) {
-//                std::cerr << ".";
-//                fflush(stderr);
-                std::cerr << count++ << " / " << jobs.size() << "\n";
+                if (++count % 1000 == 0)
+                    std::cerr << count << " / " << jobs.size() << "\n";
                 std::string name = job.at("name");
-                std::string type = job.at("type");
-                if (type != "compute") {
-                    throw std::invalid_argument("Workflow::createWorkflowFromJson(): Job " + name + " has unknown type " + type);
-                }
+//                std::string type = job.at("type");
+//                if (type != "compute") {
+//                    throw std::invalid_argument("Workflow::createWorkflowFromJson(): Job " + name + " has unknown type " + type);
+//                }
 
                 // Finding out the CPU work argument
-                auto arguments = job.at("command").at("arguments");
-                std::string cpu_work_arg = arguments.at(2);
-                std::vector<std::string> tokens;
-                boost::split(tokens, cpu_work_arg, boost::is_any_of(" "));
-                double cpu_work = std::stod(tokens.at(1));
+                std::string cpu_work_arg = job.at("command").at("arguments").at(2);
+//                std::vector<std::string> tokens;
+//                boost::split(tokens, cpu_work_arg, boost::is_any_of(" "));
+//                double cpu_work = std::stod(tokens.at(1));
+                double cpu_work = std::stod(cpu_work_arg.substr(11,14));
 
                 // Figuring out flops
                 double flops = cpu_work * flops_per_unit_of_cpu_work;
 
                 task = workflow->addTask(name, flops, 1, 1, 0.0);
 
-                // task priority
-                try {
-                    task->setPriority(job.at("priority"));
-                } catch (nlohmann::json::out_of_range &e) {
-                    // do nothing
-                }
-
-                // task average CPU
-                try {
-                    task->setAverageCPU(job.at("avgCPU"));
-                } catch (nlohmann::json::out_of_range &e) {
-                    // do nothing
-                }
-
-                // task bytes read
-                try {
-                    task->setBytesRead(job.at("bytesRead"));
-                } catch (nlohmann::json::out_of_range &e) {
-                    // do nothing
-                }
-
-                // task bytes written
-                try {
-                    task->setBytesWritten(job.at("bytesWritten"));
-                } catch (nlohmann::json::out_of_range &e) {
-                    // do nothing
-                }
+//                // task priority
+//                try {
+//                    task->setPriority(job.at("priority"));
+//                } catch (nlohmann::json::out_of_range &e) {
+//                    // do nothing
+//                }
+//
+//                // task average CPU
+//                try {
+//                    task->setAverageCPU(job.at("avgCPU"));
+//                } catch (nlohmann::json::out_of_range &e) {
+//                    // do nothing
+//                }
+//
+//                // task bytes read
+//                try {
+//                    task->setBytesRead(job.at("bytesRead"));
+//                } catch (nlohmann::json::out_of_range &e) {
+//                    // do nothing
+//                }
+//
+//                // task bytes written
+//                try {
+//                    task->setBytesWritten(job.at("bytesWritten"));
+//                } catch (nlohmann::json::out_of_range &e) {
+//                    // do nothing
+//                }
 
                 // task files
                 std::vector<nlohmann::json> files = job.at("files");
@@ -142,14 +141,14 @@ std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSO
                 std::vector<nlohmann::json> parents = job.at("parents");
                 // task dependencies
                 for (auto &parent : parents) {
-                    // Ignore transfer jobs declared as parents
-                    if (ignored_transfer_jobs.find(parent) != ignored_transfer_jobs.end()) {
-                        continue;
-                    }
-                    // Ignore auxiliary jobs declared as parents
-                    if (ignored_auxiliary_jobs.find(parent) != ignored_auxiliary_jobs.end()) {
-                        continue;
-                    }
+//                    // Ignore transfer jobs declared as parents
+//                    if (ignored_transfer_jobs.find(parent) != ignored_transfer_jobs.end()) {
+//                        continue;
+//                    }
+//                    // Ignore auxiliary jobs declared as parents
+//                    if (ignored_auxiliary_jobs.find(parent) != ignored_auxiliary_jobs.end()) {
+//                        continue;
+//                    }
                     try {
                         auto parent_task = workflow->getTaskByID(parent);
                         workflow->addControlDependency(parent_task, task, redundant_dependencies);

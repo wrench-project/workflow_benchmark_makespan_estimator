@@ -96,6 +96,68 @@ double estimate_makespan_naive_overlap(std::shared_ptr<wrench::Workflow> workflo
     return std::max<double>(compute_time, io_read_time + io_write_time);
 }
 
+double compute_task_makespan(std::shared_ptr<wrench::WorkflowTask> task,
+                             int num_nodes,
+                             int num_cores_per_node,
+                             double compute_speed_per_core,
+                             double io_read_speed_per_node,
+                             double io_write_speed_per_node) {
+    double makespan = 0;
+    for (const auto &f : task->getInputFiles()) {
+        makespan += f->getSize() / io_read_speed_per_node;
+    }
+
+    makespan += task->getFlops() / compute_speed_per_core;
+
+    double io_write_time = 0;
+    for (const auto &f : task->getOutputFiles()) {
+        makespan += f->getSize() / io_write_speed_per_node;
+    }
+    return makespan;
+}
+
+double estimate_makespan_level(std::vector<std::shared_ptr<wrench::WorkflowTask>> tasks,
+                               int num_nodes,
+                               int num_cores_per_node,
+                               double compute_speed_per_core,
+                               double io_read_speed_per_node,
+                               double io_write_speed_per_node) {
+
+    // Sort the vector of tasks according to task makespans
+    std::sort(tasks.begin(), tasks.end(),
+              [num_nodes, num_cores_per_node, io_read_speed_per_node, compute_speed_per_core, io_write_speed_per_node]
+              (const std::shared_ptr<wrench::WorkflowTask> & a, const std::shared_ptr<wrench::WorkflowTask> & b) -> bool
+    {
+        double makespan_a = compute_task_makespan(a, num_nodes, num_cores_per_node,
+                                                  compute_speed_per_core,
+                                                  io_read_speed_per_node, io_write_speed_per_node);
+        double makespan_b = compute_task_makespan(b, num_nodes, num_cores_per_node,
+                                                  compute_speed_per_core,
+                                                  io_read_speed_per_node, io_write_speed_per_node);
+        return makespan_a > makespan_b;
+    });
+
+    // Go through batches of tasks
+    double level_makespan = 0.0;
+    int num_batches = (int)(std::ceil((double) tasks.size() / (num_nodes * num_cores_per_node)));
+    for (int i = 0; i < num_batches; i++) {
+        int first_task = i * num_nodes * num_cores_per_node;
+        int last_task = (i+1) * num_nodes * num_cores_per_node - 1;
+        int num_tasks = last_task - first_task + 1;
+        double io_contention = ((double)num_tasks / num_nodes);
+        double sum_task_makespans = 0;
+        for (int t = first_task; t <= last_task; t++) {
+            sum_task_makespans += compute_task_makespan(tasks.at(t), num_nodes, num_cores_per_node,
+                                                        compute_speed_per_core,
+                                                        io_read_speed_per_node / io_contention,
+                                                        io_write_speed_per_node / io_contention);
+        }
+        level_makespan += sum_task_makespans / num_tasks; // average task run time accounting for contention
+    }
+
+    return level_makespan;
+}
+
 double estimate_makespan_critical_path(std::shared_ptr<wrench::Workflow> workflow,
                                        int num_nodes,
                                        int num_cores_per_node,
@@ -103,7 +165,14 @@ double estimate_makespan_critical_path(std::shared_ptr<wrench::Workflow> workflo
                                        double io_read_speed_per_node,
                                        double io_write_speed_per_node) {
 
-    return -1.0;
+    double makespan = 0.0;
+    for (int i = 0; i < workflow->getNumLevels(); i++) {
+        makespan += estimate_makespan_level(workflow->getTasksInTopLevelRange(i,i),
+                                            num_nodes, num_cores_per_node,
+                                            compute_speed_per_core,
+                                            io_read_speed_per_node, io_write_speed_per_node);
+    }
+    return makespan;
 }
 
 /**

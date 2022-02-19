@@ -57,12 +57,13 @@ std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSO
             std::vector<nlohmann::json> jobs = it.value();
 
             for (auto &job : jobs) {
+                std::cerr << ".";
+                fflush(stderr);
                 std::string name = job.at("name");
                 std::string type = job.at("type");
                 if (type != "compute") {
                     throw std::invalid_argument("Workflow::createWorkflowFromJson(): Job " + name + " has unknown type " + type);
                 }
-
 
                 // Finding out the CPU work argument
                 auto arguments = job.at("command").at("arguments");

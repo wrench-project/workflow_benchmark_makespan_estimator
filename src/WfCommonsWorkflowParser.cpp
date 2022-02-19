@@ -56,9 +56,11 @@ std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSO
         if (it.key() == "tasks") {
             std::vector<nlohmann::json> jobs = it.value();
 
+            int count = 0;
             for (auto &job : jobs) {
-                std::cerr << ".";
-                fflush(stderr);
+//                std::cerr << ".";
+//                fflush(stderr);
+                std::cerr << count++ << " / " << jobs.size() << "\n";
                 std::string name = job.at("name");
                 std::string type = job.at("type");
                 if (type != "compute") {

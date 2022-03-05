@@ -11,6 +11,7 @@
 #include <wrench-dev.h>
 #include <UnitParser.h>
 #include <boost/algorithm/string.hpp>
+#include <sys/time.h>
 
 
 #include <iostream>
@@ -24,7 +25,7 @@
  * Documentation in .h file
  */
 std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSON(const std::string &filename,
-                                                                                  double flops_per_unit_of_cpu_work,
+                                                                                  double task_execution_time,
                                                                                   bool redundant_dependencies) {
 
     std::ifstream file;
@@ -52,24 +53,26 @@ std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSO
 
     std::shared_ptr<wrench::WorkflowTask> task;
 
+    struct timeval last_time;
+
+    gettimeofday(&last_time, nullptr);
     for (nlohmann::json::iterator it = workflowJobs.begin(); it != workflowJobs.end(); ++it) {
         if (it.key() == "tasks") {
             std::vector<nlohmann::json> jobs = it.value();
 
             int count = 0;
             for (auto &job : jobs) {
-                if (++count % 1000 == 0)
-                    fprintf(stderr, "%.2lf%%\n", 100.0 * count / jobs.size());
+                if (++count % 1000 == 0) {
+                    struct timeval now;
+                    gettimeofday(&now, nullptr);
+                    double elapsed = ((now.tv_sec - last_time.tv_sec)*1000000.0 + now.tv_usec - last_time.tv_usec)/1000000.0;
+                    fprintf(stderr, "%.2lf%%  (%.2lf seconds)\n", 100.0 * count / jobs.size(), elapsed);
+                    gettimeofday(&last_time, nullptr);
+                }
+
                 std::string name = job.at("name");
 
-                // Finding out the CPU work argument
-                std::string cpu_work_arg = job.at("command").at("arguments").at(2);
-                double cpu_work = std::stod(cpu_work_arg.substr(11,14));
-
-                // Figuring out flops
-                double flops = cpu_work * flops_per_unit_of_cpu_work;
-
-                task = workflow->addTask(name, flops, 1, 1, 0.0);
+                task = workflow->addTask(name, task_execution_time, 1, 1, 0.0);
 
                 // task files
                 std::vector<nlohmann::json> files = job.at("files");
@@ -83,7 +86,7 @@ std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSO
                     try {
                         workflow_file = workflow->addFile(id, size);
                     } catch (const std::invalid_argument &ia) {
-                        // ignore
+                        workflow_file = workflow->getFileByID(id);
                     }
                     if (link == "input") {
                         task->addInputFile(workflow_file);

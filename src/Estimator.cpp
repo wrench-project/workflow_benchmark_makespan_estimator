@@ -25,20 +25,24 @@
 namespace po = boost::program_options;
 
 struct platform_spec {
-    double compute_speed_per_core;
+    double cpu_task_execution_time;
+    double mem_task_execution_time;
     double io_read_speed_per_node;
     double io_write_speed_per_node;
 };
 
 std::map<std::string, struct platform_spec> platform_specs = {
         { "summit",
-          {148600.0 * TFLOP / 2414592,
-           1788.32 * GBYTE / 504,
-           2158.70 * GBYTE / 504}
+                {
+                        20.624,
+                        2 * 60.0 + 47.927,
+                        466 * MBYTE,
+                        59.9 * MBYTE
+                }
         }
 };
 
-double compute_total_flops(std::shared_ptr<wrench::Workflow> workflow) {
+double compute_total_work(std::shared_ptr<wrench::Workflow> workflow) {
     double total_flops = 0.0;
     for (auto const &t : workflow->getTasks()) {
         total_flops += t->getFlops();
@@ -63,7 +67,6 @@ std::pair<double, double> compute_total_data(std::shared_ptr<wrench::Workflow> w
 double estimate_makespan_naive_no_overlap(std::shared_ptr<wrench::Workflow> workflow,
                                           int num_nodes,
                                           int num_cores_per_node,
-                                          double compute_speed_per_core,
                                           double io_read_speed_per_node,
                                           double io_write_speed_per_node) {
 
@@ -72,8 +75,11 @@ double estimate_makespan_naive_no_overlap(std::shared_ptr<wrench::Workflow> work
     double total_written_data = std::get<1>(total_data);
 
     double io_read_time = total_read_data / (io_read_speed_per_node * num_nodes);
-    double compute_time = compute_total_flops(workflow) / (num_nodes * num_cores_per_node * compute_speed_per_core);
+    std::cerr << "\nIO READ TIME = " << io_read_time << "\n";
+    double compute_time = compute_total_work(workflow) / (num_nodes * num_cores_per_node);
+    std::cerr << "COMPUTE TIME = " << compute_time << "\n";
     double io_write_time = total_written_data / (io_write_speed_per_node * num_nodes);
+    std::cerr << "IO WRITE TIME = " << io_write_time << "\n";
 
     return io_read_time + compute_time + io_write_time;
 }
@@ -81,7 +87,6 @@ double estimate_makespan_naive_no_overlap(std::shared_ptr<wrench::Workflow> work
 double estimate_makespan_naive_overlap(std::shared_ptr<wrench::Workflow> workflow,
                                        int num_nodes,
                                        int num_cores_per_node,
-                                       double compute_speed_per_core,
                                        double io_read_speed_per_node,
                                        double io_write_speed_per_node) {
 
@@ -90,16 +95,13 @@ double estimate_makespan_naive_overlap(std::shared_ptr<wrench::Workflow> workflo
     double total_written_data = std::get<1>(total_data);
 
     double io_read_time = total_read_data / (io_read_speed_per_node * num_nodes);
-    double compute_time = compute_total_flops(workflow) / (num_nodes * num_cores_per_node * compute_speed_per_core);
+    double compute_time = compute_total_work(workflow) / (num_nodes * num_cores_per_node);
     double io_write_time = total_written_data / (io_write_speed_per_node * num_nodes);
 
     return std::max<double>(compute_time, io_read_time + io_write_time);
 }
 
 double compute_task_makespan(std::shared_ptr<wrench::WorkflowTask> task,
-                             int num_nodes,
-                             int num_cores_per_node,
-                             double compute_speed_per_core,
                              double io_read_speed_per_node,
                              double io_write_speed_per_node) {
     double makespan = 0;
@@ -107,9 +109,8 @@ double compute_task_makespan(std::shared_ptr<wrench::WorkflowTask> task,
         makespan += f->getSize() / io_read_speed_per_node;
     }
 
-    makespan += task->getFlops() / compute_speed_per_core;
+    makespan += task->getFlops();
 
-    double io_write_time = 0;
     for (const auto &f : task->getOutputFiles()) {
         makespan += f->getSize() / io_write_speed_per_node;
     }
@@ -119,23 +120,18 @@ double compute_task_makespan(std::shared_ptr<wrench::WorkflowTask> task,
 double estimate_makespan_level(std::vector<std::shared_ptr<wrench::WorkflowTask>> tasks,
                                int num_nodes,
                                int num_cores_per_node,
-                               double compute_speed_per_core,
                                double io_read_speed_per_node,
                                double io_write_speed_per_node) {
 
     // Sort the vector of tasks according to task makespans
     std::sort(tasks.begin(), tasks.end(),
-              [num_nodes, num_cores_per_node, io_read_speed_per_node, compute_speed_per_core, io_write_speed_per_node]
-              (const std::shared_ptr<wrench::WorkflowTask> & a, const std::shared_ptr<wrench::WorkflowTask> & b) -> bool
-    {
-        double makespan_a = compute_task_makespan(a, num_nodes, num_cores_per_node,
-                                                  compute_speed_per_core,
-                                                  io_read_speed_per_node, io_write_speed_per_node);
-        double makespan_b = compute_task_makespan(b, num_nodes, num_cores_per_node,
-                                                  compute_speed_per_core,
-                                                  io_read_speed_per_node, io_write_speed_per_node);
-        return makespan_a > makespan_b;
-    });
+              [io_read_speed_per_node, io_write_speed_per_node]
+                      (const std::shared_ptr<wrench::WorkflowTask> & a, const std::shared_ptr<wrench::WorkflowTask> & b) -> bool
+              {
+                  double makespan_a = compute_task_makespan(a, io_read_speed_per_node, io_write_speed_per_node);
+                  double makespan_b = compute_task_makespan(b, io_read_speed_per_node, io_write_speed_per_node);
+                  return makespan_a > makespan_b;
+              });
 
     // Go through batches of tasks
     double level_makespan = 0.0;
@@ -147,9 +143,7 @@ double estimate_makespan_level(std::vector<std::shared_ptr<wrench::WorkflowTask>
         double io_contention = ((double)num_tasks / num_nodes);
         double sum_task_makespans = 0;
         for (int t = first_task; t <= last_task; t++) {
-            sum_task_makespans += compute_task_makespan(tasks.at(t), num_nodes, num_cores_per_node,
-                                                        compute_speed_per_core,
-                                                        io_read_speed_per_node / io_contention,
+            sum_task_makespans += compute_task_makespan(tasks.at(t), io_read_speed_per_node / io_contention,
                                                         io_write_speed_per_node / io_contention);
         }
         level_makespan += sum_task_makespans / num_tasks; // average task run time accounting for contention
@@ -161,7 +155,6 @@ double estimate_makespan_level(std::vector<std::shared_ptr<wrench::WorkflowTask>
 double estimate_makespan_critical_path(std::shared_ptr<wrench::Workflow> workflow,
                                        int num_nodes,
                                        int num_cores_per_node,
-                                       double compute_speed_per_core,
                                        double io_read_speed_per_node,
                                        double io_write_speed_per_node) {
 
@@ -169,7 +162,6 @@ double estimate_makespan_critical_path(std::shared_ptr<wrench::Workflow> workflo
     for (int i = 0; i < workflow->getNumLevels(); i++) {
         makespan += estimate_makespan_level(workflow->getTasksInTopLevelRange(i,i),
                                             num_nodes, num_cores_per_node,
-                                            compute_speed_per_core,
                                             io_read_speed_per_node, io_write_speed_per_node);
     }
     return makespan;
@@ -193,6 +185,7 @@ int main(int argc, char **argv) {
     std::string workflow_file;
     std::string platform_spec;
     std::string s_flops_per_unit_of_cpu_work;
+    std::string s_task_type;
     int num_nodes;
     int num_cores_per_node;
 
@@ -204,10 +197,10 @@ int main(int argc, char **argv) {
              "Show this help message\n")
             ("workflow", po::value<std::string>(&workflow_file)->required()->value_name("<path>"),
              "Path to JSON workflow description file\n")
-            ("flops_per_unit_of_cpu_work", po::value<std::string>(&s_flops_per_unit_of_cpu_work)->required()->value_name("<flops per unit of cpu work>"),
-             "Number of flops per unit of CPU work passed to the workflow task benchmark (e.g., \"100Gf\")\n")
-            ("platform_spec", po::value<std::string>(&platform_spec)->required()->value_name("<per_core_flops:per_node_io_read_bw:per_node_io_write_bw | name>"),
-             "Possible values:\n\t- specific values, e.g., 200Gf:100MBps:80kbps\n\t- summit (values are from Top500 and IO500)\n")
+            ("task_type", po::value<std::string>(&s_task_type)->required()->value_name("<task_type>"),
+             "[ cpu | mem ]\n")
+            ("platform_spec", po::value<std::string>(&platform_spec)->required()->value_name("<cpu_task_exec_time:mem_task_exec_time:per_node_io_read_bw:per_node_io_write_bw | name>"),
+             "Possible values:\n\t- specific values, e.g., 200:300:100MBps:80kbps\n\t- summit\n")
             ("num_nodes", po::value<int>(&num_nodes)->required()->value_name("<num nodes>"),
              "The number of compute nodes used for running the workflow")
             ("num_cores_per_node", po::value<int>(&num_cores_per_node)->required()->value_name("<num cores per node>"),
@@ -230,24 +223,25 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    double flops_per_unit_of_cpu_work = UnitParser::parse_compute_speed(s_flops_per_unit_of_cpu_work);
-
-    double compute_speed_per_core;
+    double cpu_task_execution_time;
+    double mem_task_execution_time;
     double io_read_speed_per_node;
     double io_write_speed_per_node;
 
     if (platform_spec.find(':') != string::npos) {
         std::vector<std::string> tokens;
         boost::split(tokens, platform_spec, boost::is_any_of(":"));
-        if (tokens.size() != 3) {
+        if (tokens.size() != 4) {
             std::cerr << "Error: invalid platform specification " << platform_spec << "\n";
             exit(1);
         }
-        compute_speed_per_core = UnitParser::parse_compute_speed(tokens.at(0));
-        io_read_speed_per_node = UnitParser::parse_bandwidth(tokens.at(1));
-        io_write_speed_per_node = UnitParser::parse_bandwidth(tokens.at(2));
+        cpu_task_execution_time = strtod(tokens.at(0).c_str(), nullptr);
+        mem_task_execution_time = strtod(tokens.at(1).c_str(), nullptr);
+        io_read_speed_per_node = UnitParser::parse_bandwidth(tokens.at(2));
+        io_write_speed_per_node = UnitParser::parse_bandwidth(tokens.at(3));
     } else if (platform_specs.find(platform_spec) != platform_specs.end()) {
-        compute_speed_per_core = platform_specs[platform_spec].compute_speed_per_core;
+        cpu_task_execution_time = platform_specs[platform_spec].cpu_task_execution_time;
+        mem_task_execution_time = platform_specs[platform_spec].mem_task_execution_time;
         io_read_speed_per_node = platform_specs[platform_spec].io_read_speed_per_node;
         io_write_speed_per_node = platform_specs[platform_spec].io_write_speed_per_node;
     } else {
@@ -256,7 +250,16 @@ int main(int argc, char **argv) {
     }
 
     /* Create the workflow */
-    auto workflow = WfCommonsWorkflowParser::createWorkflowFromJSON(workflow_file, flops_per_unit_of_cpu_work, false);
+    double task_execution_time;
+    if (s_task_type == "cpu") {
+        task_execution_time = cpu_task_execution_time;
+    } else if (s_task_type == "mem") {
+        task_execution_time = mem_task_execution_time;
+    } else {
+        std::cerr << "Error: invalid task_type specification " << s_task_type << "\n";
+        exit(1);
+    }
+    auto workflow = WfCommonsWorkflowParser::createWorkflowFromJSON(workflow_file, task_execution_time, false);
 
     auto total_data = compute_total_data(workflow);
     double total_read_data = std::get<0>(total_data);
@@ -264,19 +267,22 @@ int main(int argc, char **argv) {
 
     fprintf(stderr, "PLATFORM:\n");
     fprintf(stderr, "  - %d %d-core nodes\n", num_nodes, num_cores_per_node);
-    fprintf(stderr, "  - core flop rate: %.2lf Gflop/sec\n", compute_speed_per_core / GFLOP);
-    fprintf(stderr, "  - per-node I/O read rate: %.2lf GB/sec\n", io_read_speed_per_node / GBYTE);
-    fprintf(stderr, "  - per-node I/O write rate: %.2lf GB/sec\n", io_write_speed_per_node / GBYTE);
+    fprintf(stderr, "  - task execution time: %.2lf sec\n", task_execution_time);
+    fprintf(stderr, "  - per-node I/O read rate: %.2lf MB/sec\n", io_read_speed_per_node / MBYTE);
+    fprintf(stderr, "  - per-node I/O write rate: %.2lf MB/sec\n", io_write_speed_per_node / MBYTE);
     fprintf(stderr, "\nWORKFLOW:\n");
-    fprintf(stderr, "  - TOTAL WORK:         %.2lf Tflop\n", compute_total_flops(workflow) / TFLOP);
+    fprintf(stderr, "  - # TASKS:            %lu\n", workflow->getNumberOfTasks());
+    double total_work = compute_total_work(workflow);
+    fprintf(stderr, "  - TOTAL WORK:         %.2lf seconds (%.2lf hours)\n", total_work, total_work / 3600.0);
     fprintf(stderr, "  - TOTAL DATA READ:    %.2lf GB\n", total_read_data / GBYTE);
     fprintf(stderr, "  - TOTAL DATA WRITTEN: %.2lf GB\n", total_written_data / GBYTE);
-    fprintf(stderr, "\nNAIVE / NO CONCURRENCY: %.2lf hours\n", estimate_makespan_naive_no_overlap(workflow, num_nodes, num_cores_per_node,
-                                                                                                compute_speed_per_core, io_read_speed_per_node, io_write_speed_per_node) / 3600);
-    fprintf(stderr, "\nNAIVE / CONCURRENCY   : %.2lf hours\n", estimate_makespan_naive_overlap(workflow, num_nodes, num_cores_per_node,
-                                                                                             compute_speed_per_core, io_read_speed_per_node, io_write_speed_per_node) / 3600);
-    fprintf(stderr, "\nCRITICAL PATH         : %.2lf hours\n", estimate_makespan_critical_path(workflow, num_nodes, num_cores_per_node,
-                                                                                             compute_speed_per_core, io_read_speed_per_node, io_write_speed_per_node) / 3600);
+    double estimate1 = estimate_makespan_naive_no_overlap(workflow, num_nodes, num_cores_per_node, io_read_speed_per_node, io_write_speed_per_node);
+    double estimate2 = estimate_makespan_naive_overlap(workflow, num_nodes, num_cores_per_node, io_read_speed_per_node, io_write_speed_per_node);
+    double estimate3 = estimate_makespan_critical_path(workflow, num_nodes, num_cores_per_node, io_read_speed_per_node, io_write_speed_per_node);
+    fprintf(stdout, "\nNAIVE / NO CONCURRENCY: %.1lf seconds\n", estimate1);
+    fprintf(stdout, "NAIVE / CONCURRENCY   : %.1lf seconds\n", estimate2);
+    fprintf(stdout, "CRITICAL PATH         : %.1lf seconds\n", estimate3);
+    fprintf(stdout, "%.1lf,%.1lf,%.1lf\n", estimate1, estimate2, estimate3);
 
 
     return 0;

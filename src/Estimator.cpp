@@ -183,11 +183,12 @@ int main(int argc, char **argv) {
     simulation->init(&argc, argv);
 
     std::string workflow_file;
-    std::string platform_spec;
     std::string s_flops_per_unit_of_cpu_work;
     std::string s_task_type;
     int num_nodes;
     int num_cores_per_node;
+
+    std::vector<std::string> s_platform_specs;
 
     /* Parsing of the command-line arguments */
     // Define command-line argument options
@@ -197,9 +198,7 @@ int main(int argc, char **argv) {
              "Show this help message\n")
             ("workflow", po::value<std::string>(&workflow_file)->required()->value_name("<path>"),
              "Path to JSON workflow description file\n")
-            ("task_type", po::value<std::string>(&s_task_type)->required()->value_name("<task_type>"),
-             "[ cpu | mem ]\n")
-            ("platform_spec", po::value<std::string>(&platform_spec)->required()->value_name("<cpu_task_exec_time:mem_task_exec_time:per_node_io_read_bw:per_node_io_write_bw | name>"),
+            ("platform_spec", po::value<std::vector<std::string>>(&s_platform_specs)->required()->value_name("<cpu_task_exec_time:mem_task_exec_time:per_node_io_read_bw:per_node_io_write_bw | name>"),
              "Possible values:\n\t- specific values, e.g., 200:300:100MBps:80kbps\n\t- summit\n")
             ("num_nodes", po::value<int>(&num_nodes)->required()->value_name("<num nodes>"),
              "The number of compute nodes used for running the workflow")
@@ -223,67 +222,77 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    double cpu_task_execution_time;
-    double mem_task_execution_time;
-    double io_read_speed_per_node;
-    double io_write_speed_per_node;
+    /* Create the workflow */
+    auto workflow = WfCommonsWorkflowParser::createWorkflowFromJSON(workflow_file, 1.0, false);
 
-    if (platform_spec.find(':') != string::npos) {
-        std::vector<std::string> tokens;
-        boost::split(tokens, platform_spec, boost::is_any_of(":"));
-        if (tokens.size() != 4) {
+
+    for (auto const &platform_spec : s_platform_specs) {
+
+        double cpu_task_execution_time;
+        double mem_task_execution_time;
+        double io_read_speed_per_node;
+        double io_write_speed_per_node;
+
+        if (platform_spec.find(':') != string::npos) {
+            std::vector<std::string> tokens;
+            boost::split(tokens, platform_spec, boost::is_any_of(":"));
+            if (tokens.size() != 4) {
+                std::cerr << "Error: invalid platform specification " << platform_spec << "\n";
+                exit(1);
+            }
+            cpu_task_execution_time = strtod(tokens.at(0).c_str(), nullptr);
+            mem_task_execution_time = strtod(tokens.at(1).c_str(), nullptr);
+            io_read_speed_per_node = UnitParser::parse_bandwidth(tokens.at(2));
+            io_write_speed_per_node = UnitParser::parse_bandwidth(tokens.at(3));
+        } else if (platform_specs.find(platform_spec) != platform_specs.end()) {
+            cpu_task_execution_time = platform_specs[platform_spec].cpu_task_execution_time;
+            mem_task_execution_time = platform_specs[platform_spec].mem_task_execution_time;
+            io_read_speed_per_node = platform_specs[platform_spec].io_read_speed_per_node;
+            io_write_speed_per_node = platform_specs[platform_spec].io_write_speed_per_node;
+        } else {
             std::cerr << "Error: invalid platform specification " << platform_spec << "\n";
             exit(1);
         }
-        cpu_task_execution_time = strtod(tokens.at(0).c_str(), nullptr);
-        mem_task_execution_time = strtod(tokens.at(1).c_str(), nullptr);
-        io_read_speed_per_node = UnitParser::parse_bandwidth(tokens.at(2));
-        io_write_speed_per_node = UnitParser::parse_bandwidth(tokens.at(3));
-    } else if (platform_specs.find(platform_spec) != platform_specs.end()) {
-        cpu_task_execution_time = platform_specs[platform_spec].cpu_task_execution_time;
-        mem_task_execution_time = platform_specs[platform_spec].mem_task_execution_time;
-        io_read_speed_per_node = platform_specs[platform_spec].io_read_speed_per_node;
-        io_write_speed_per_node = platform_specs[platform_spec].io_write_speed_per_node;
-    } else {
-        std::cerr << "Error: invalid platform specification " << platform_spec << "\n";
-        exit(1);
+
+        std::map<std::string, double> task_types = {{"cpu", cpu_task_execution_time}, {"mem", mem_task_execution_time}};
+        for (auto const &tt : task_types) {
+
+            double task_execution_time = tt.second;
+
+            // Set task flops
+            for (auto const &t : workflow->getTasks()) {
+                t->setFlops(task_execution_time);
+            }
+
+            auto total_data = compute_total_data(workflow);
+            double total_read_data = std::get<0>(total_data);
+            double total_written_data = std::get<1>(total_data);
+
+            fprintf(stderr, "PLATFORM:\n");
+            fprintf(stderr, "  - %d %d-core nodes\n", num_nodes, num_cores_per_node);
+            fprintf(stderr, "  - task execution time: %.2lf sec\n", task_execution_time);
+            fprintf(stderr, "  - per-node I/O read rate: %.2lf MB/sec\n", io_read_speed_per_node / MBYTE);
+            fprintf(stderr, "  - per-node I/O write rate: %.2lf MB/sec\n", io_write_speed_per_node / MBYTE);
+            fprintf(stderr, "\nWORKFLOW:\n");
+            fprintf(stderr, "  - # TASKS:            %lu\n", workflow->getNumberOfTasks());
+            fprintf(stderr, "  - TASK TYPE:          %s\n", tt.first.c_str());
+            double total_work = compute_total_work(workflow);
+            fprintf(stderr, "  - TOTAL WORK:         %.2lf seconds (%.2lf hours)\n", total_work, total_work / 3600.0);
+            fprintf(stderr, "  - TOTAL DATA READ:    %.2lf GB\n", total_read_data / GBYTE);
+            fprintf(stderr, "  - TOTAL DATA WRITTEN: %.2lf GB\n", total_written_data / GBYTE);
+            double estimate1 = estimate_makespan_naive_no_overlap(workflow, num_nodes, num_cores_per_node,
+                                                                  io_read_speed_per_node, io_write_speed_per_node);
+            double estimate2 = estimate_makespan_naive_overlap(workflow, num_nodes, num_cores_per_node,
+                                                               io_read_speed_per_node, io_write_speed_per_node);
+            double estimate3 = estimate_makespan_critical_path(workflow, num_nodes, num_cores_per_node,
+                                                               io_read_speed_per_node, io_write_speed_per_node);
+            fprintf(stderr, "\nNAIVE / NO CONCURRENCY: %.1lf seconds\n", estimate1);
+            fprintf(stderr, "NAIVE / CONCURRENCY   : %.1lf seconds\n", estimate2);
+            fprintf(stderr, "CRITICAL PATH         : %.1lf seconds\n", estimate3);
+            fprintf(stdout, "%s-%s:%.1lf,%.1lf,%.1lf\n", platform_spec.c_str(), tt.first.c_str(), estimate1, estimate2, estimate3);
+        }
+
     }
-
-    /* Create the workflow */
-    double task_execution_time;
-    if (s_task_type == "cpu") {
-        task_execution_time = cpu_task_execution_time;
-    } else if (s_task_type == "mem") {
-        task_execution_time = mem_task_execution_time;
-    } else {
-        std::cerr << "Error: invalid task_type specification " << s_task_type << "\n";
-        exit(1);
-    }
-    auto workflow = WfCommonsWorkflowParser::createWorkflowFromJSON(workflow_file, task_execution_time, false);
-
-    auto total_data = compute_total_data(workflow);
-    double total_read_data = std::get<0>(total_data);
-    double total_written_data = std::get<1>(total_data);
-
-    fprintf(stderr, "PLATFORM:\n");
-    fprintf(stderr, "  - %d %d-core nodes\n", num_nodes, num_cores_per_node);
-    fprintf(stderr, "  - task execution time: %.2lf sec\n", task_execution_time);
-    fprintf(stderr, "  - per-node I/O read rate: %.2lf MB/sec\n", io_read_speed_per_node / MBYTE);
-    fprintf(stderr, "  - per-node I/O write rate: %.2lf MB/sec\n", io_write_speed_per_node / MBYTE);
-    fprintf(stderr, "\nWORKFLOW:\n");
-    fprintf(stderr, "  - # TASKS:            %lu\n", workflow->getNumberOfTasks());
-    double total_work = compute_total_work(workflow);
-    fprintf(stderr, "  - TOTAL WORK:         %.2lf seconds (%.2lf hours)\n", total_work, total_work / 3600.0);
-    fprintf(stderr, "  - TOTAL DATA READ:    %.2lf GB\n", total_read_data / GBYTE);
-    fprintf(stderr, "  - TOTAL DATA WRITTEN: %.2lf GB\n", total_written_data / GBYTE);
-    double estimate1 = estimate_makespan_naive_no_overlap(workflow, num_nodes, num_cores_per_node, io_read_speed_per_node, io_write_speed_per_node);
-    double estimate2 = estimate_makespan_naive_overlap(workflow, num_nodes, num_cores_per_node, io_read_speed_per_node, io_write_speed_per_node);
-    double estimate3 = estimate_makespan_critical_path(workflow, num_nodes, num_cores_per_node, io_read_speed_per_node, io_write_speed_per_node);
-    fprintf(stdout, "\nNAIVE / NO CONCURRENCY: %.1lf seconds\n", estimate1);
-    fprintf(stdout, "NAIVE / CONCURRENCY   : %.1lf seconds\n", estimate2);
-    fprintf(stdout, "CRITICAL PATH         : %.1lf seconds\n", estimate3);
-    fprintf(stdout, "%.1lf,%.1lf,%.1lf\n", estimate1, estimate2, estimate3);
-
 
     return 0;
 }

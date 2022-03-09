@@ -25,6 +25,7 @@
 namespace po = boost::program_options;
 
 struct platform_spec {
+    unsigned num_cores_per_node;
     double cpu_task_execution_time;
     double mem_task_execution_time;
     double io_read_speed_per_node;
@@ -32,14 +33,24 @@ struct platform_spec {
 };
 
 std::map<std::string, struct platform_spec> platform_specs = {
-        { "summit",
-                {
-                        20.624,
-                        2 * 60.0 + 47.927,
-                        466 * MBYTE,
-                        59.9 * MBYTE
-                }
+    { "Summit",
+        {
+                40,
+                20.624, // time python3 wfbench.py --percent-cpu 0.9 --cpu-work 500 abc
+                2 * 60.0 + 47.927, // time python3 wfbench.py --percent-cpu 0.1 --cpu-work 500 abc
+                466 * MBYTE, // time dd of=/dev/zero if=test-file iflag=direct bs=128k count=4k
+                59.9 * MBYTE // time dd if=/dev/zero of=test-file oflag=direct bs=128k count=4k
         }
+    },
+    { "Piz Daint",
+        {
+                20,
+                7.132, // time python3 wfbench.py --percent-cpu 0.9 --cpu-work 500 abc
+                53.690, // time python3 wfbench.py --percent-cpu 0.1 --cpu-work 500 abc
+                37.3 * MBYTE, // time dd of=/dev/zero if=test-file iflag=direct bs=128k count=4k
+                9.4 * MBYTE // time dd if=/dev/zero of=test-file oflag=direct bs=128k count=4k
+        }
+    }
 };
 
 double compute_total_work(std::shared_ptr<wrench::Workflow> workflow) {
@@ -50,7 +61,7 @@ double compute_total_work(std::shared_ptr<wrench::Workflow> workflow) {
     return total_flops;
 }
 
-std::pair<double, double> compute_total_data(std::shared_ptr<wrench::Workflow> workflow) {
+std::pair<double, double> compute_total_data(const std::shared_ptr<wrench::Workflow>& workflow) {
     double total_read_data = 0.0;
     double total_written_data = 0.0;
     for (auto const &t : workflow->getTasks()) {
@@ -64,9 +75,9 @@ std::pair<double, double> compute_total_data(std::shared_ptr<wrench::Workflow> w
     return std::make_pair(total_read_data, total_written_data);
 }
 
-double estimate_makespan_naive_no_overlap(std::shared_ptr<wrench::Workflow> workflow,
-                                          int num_nodes,
-                                          int num_cores_per_node,
+double estimate_makespan_naive_no_overlap(const std::shared_ptr<wrench::Workflow>& workflow,
+                                          unsigned long num_nodes,
+                                          unsigned long num_cores_per_node,
                                           double io_read_speed_per_node,
                                           double io_write_speed_per_node) {
 
@@ -74,19 +85,19 @@ double estimate_makespan_naive_no_overlap(std::shared_ptr<wrench::Workflow> work
     double total_read_data = std::get<0>(total_data);
     double total_written_data = std::get<1>(total_data);
 
-    double io_read_time = total_read_data / (io_read_speed_per_node * num_nodes);
+    double io_read_time = total_read_data / (io_read_speed_per_node * (double)num_nodes);
     std::cerr << "\nIO READ TIME = " << io_read_time << "\n";
-    double compute_time = compute_total_work(workflow) / (num_nodes * num_cores_per_node);
+    double compute_time = compute_total_work(workflow) / ((double)num_nodes * (double)num_cores_per_node);
     std::cerr << "COMPUTE TIME = " << compute_time << "\n";
-    double io_write_time = total_written_data / (io_write_speed_per_node * num_nodes);
+    double io_write_time = total_written_data / (io_write_speed_per_node * (double)num_nodes);
     std::cerr << "IO WRITE TIME = " << io_write_time << "\n";
 
     return io_read_time + compute_time + io_write_time;
 }
 
-double estimate_makespan_naive_overlap(std::shared_ptr<wrench::Workflow> workflow,
-                                       int num_nodes,
-                                       int num_cores_per_node,
+double estimate_makespan_naive_overlap(const std::shared_ptr<wrench::Workflow>& workflow,
+                                       unsigned long num_nodes,
+                                       unsigned long num_cores_per_node,
                                        double io_read_speed_per_node,
                                        double io_write_speed_per_node) {
 
@@ -94,14 +105,14 @@ double estimate_makespan_naive_overlap(std::shared_ptr<wrench::Workflow> workflo
     double total_read_data = std::get<0>(total_data);
     double total_written_data = std::get<1>(total_data);
 
-    double io_read_time = total_read_data / (io_read_speed_per_node * num_nodes);
-    double compute_time = compute_total_work(workflow) / (num_nodes * num_cores_per_node);
-    double io_write_time = total_written_data / (io_write_speed_per_node * num_nodes);
+    double io_read_time = total_read_data / (io_read_speed_per_node * (double)num_nodes);
+    double compute_time = compute_total_work(workflow) / ((double)num_nodes * (double)num_cores_per_node);
+    double io_write_time = total_written_data / (io_write_speed_per_node * (double)num_nodes);
 
     return std::max<double>(compute_time, io_read_time + io_write_time);
 }
 
-double compute_task_makespan(std::shared_ptr<wrench::WorkflowTask> task,
+double compute_task_makespan(const std::shared_ptr<wrench::WorkflowTask>& task,
                              double io_read_speed_per_node,
                              double io_write_speed_per_node) {
     double makespan = 0;
@@ -118,8 +129,8 @@ double compute_task_makespan(std::shared_ptr<wrench::WorkflowTask> task,
 }
 
 double estimate_makespan_level(std::vector<std::shared_ptr<wrench::WorkflowTask>> tasks,
-                               int num_nodes,
-                               int num_cores_per_node,
+                               unsigned long num_nodes,
+                               unsigned long num_cores_per_node,
                                double io_read_speed_per_node,
                                double io_write_speed_per_node) {
 
@@ -135,12 +146,12 @@ double estimate_makespan_level(std::vector<std::shared_ptr<wrench::WorkflowTask>
 
     // Go through batches of tasks
     double level_makespan = 0.0;
-    int num_batches = (int)(std::ceil((double) tasks.size() / (num_nodes * num_cores_per_node)));
+    int num_batches = (int)(std::ceil((double) tasks.size() / ((double)num_nodes * (double)num_cores_per_node)));
     for (int i = 0; i < num_batches; i++) {
-        int first_task = i * num_nodes * num_cores_per_node;
-        int last_task = std::min<int>(tasks.size() - 1, (i+1) * num_nodes * num_cores_per_node - 1);
+        int first_task = i * (int)num_nodes * (int)num_cores_per_node;
+        int last_task = std::min<int>((int)tasks.size() - 1, (i+1) * (int)num_nodes * (int)num_cores_per_node - 1);
         int num_tasks = last_task - first_task + 1;
-        double io_contention = ((double)num_tasks / num_nodes);
+        double io_contention = ((double)num_tasks / (double)num_nodes);
         double sum_task_makespans = 0;
         for (int t = first_task; t <= last_task; t++) {
             sum_task_makespans += compute_task_makespan(tasks.at(t), io_read_speed_per_node / io_contention,
@@ -152,9 +163,9 @@ double estimate_makespan_level(std::vector<std::shared_ptr<wrench::WorkflowTask>
     return level_makespan;
 }
 
-double estimate_makespan_critical_path(std::shared_ptr<wrench::Workflow> workflow,
-                                       int num_nodes,
-                                       int num_cores_per_node,
+double estimate_makespan_critical_path(const std::shared_ptr<wrench::Workflow>& workflow,
+                                       unsigned long num_nodes,
+                                       unsigned long num_cores_per_node,
                                        double io_read_speed_per_node,
                                        double io_write_speed_per_node) {
 
@@ -185,8 +196,7 @@ int main(int argc, char **argv) {
     std::string workflow_file;
     std::string s_flops_per_unit_of_cpu_work;
     std::string s_task_type;
-    int num_nodes;
-    int num_cores_per_node;
+    int num_cores;
 
     std::vector<std::string> s_platform_specs;
 
@@ -198,12 +208,10 @@ int main(int argc, char **argv) {
              "Show this help message\n")
             ("workflow", po::value<std::string>(&workflow_file)->required()->value_name("<path>"),
              "Path to JSON workflow description file\n")
-            ("platform_spec", po::value<std::vector<std::string>>(&s_platform_specs)->required()->value_name("<cpu_task_exec_time:mem_task_exec_time:per_node_io_read_bw:per_node_io_write_bw | name>"),
-             "Possible values:\n\t- specific values, e.g., 200:300:100MBps:80kbps\n\t- summit\n")
-            ("num_nodes", po::value<int>(&num_nodes)->required()->value_name("<num nodes>"),
-             "The number of compute nodes used for running the workflow")
-            ("num_cores_per_node", po::value<int>(&num_cores_per_node)->required()->value_name("<num cores per node>"),
-             "The number of cores per compute node")
+            ("platform_spec", po::value<std::vector<std::string>>(&s_platform_specs)->required()->value_name("<cpu_task_exec_time:mem_task_exec_time:per_node_io_read_bw:per_node_io_write_bw:num_cores_per_nodes | name>"),
+             "Possible values:\n\t- specific values, e.g., 200:300:100MBps:80kbps:16\n\t- Summit\n\t- Piz Daint\n")
+            ("num_cores", po::value<int>(&num_cores)->required()->value_name("<num cores>"),
+             "The total number of cores")
             ;
 
     // Parse command-line arguments
@@ -222,12 +230,14 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
+
     /* Create the workflow */
     auto workflow = WfCommonsWorkflowParser::createWorkflowFromJSON(workflow_file, 1.0, false);
 
 
     for (auto const &platform_spec : s_platform_specs) {
 
+        unsigned long num_cores_per_node;
         double cpu_task_execution_time;
         double mem_task_execution_time;
         double io_read_speed_per_node;
@@ -236,7 +246,7 @@ int main(int argc, char **argv) {
         if (platform_spec.find(':') != string::npos) {
             std::vector<std::string> tokens;
             boost::split(tokens, platform_spec, boost::is_any_of(":"));
-            if (tokens.size() != 4) {
+            if (tokens.size() != 5) {
                 std::cerr << "Error: invalid platform specification " << platform_spec << "\n";
                 exit(1);
             }
@@ -244,11 +254,13 @@ int main(int argc, char **argv) {
             mem_task_execution_time = strtod(tokens.at(1).c_str(), nullptr);
             io_read_speed_per_node = UnitParser::parse_bandwidth(tokens.at(2));
             io_write_speed_per_node = UnitParser::parse_bandwidth(tokens.at(3));
+            num_cores_per_node = strtoul(tokens.at(4).c_str(), nullptr, 10);
         } else if (platform_specs.find(platform_spec) != platform_specs.end()) {
             cpu_task_execution_time = platform_specs[platform_spec].cpu_task_execution_time;
             mem_task_execution_time = platform_specs[platform_spec].mem_task_execution_time;
             io_read_speed_per_node = platform_specs[platform_spec].io_read_speed_per_node;
             io_write_speed_per_node = platform_specs[platform_spec].io_write_speed_per_node;
+            num_cores_per_node = platform_specs[platform_spec].num_cores_per_node;
         } else {
             std::cerr << "Error: invalid platform specification " << platform_spec << "\n";
             exit(1);
@@ -267,9 +279,14 @@ int main(int argc, char **argv) {
             auto total_data = compute_total_data(workflow);
             double total_read_data = std::get<0>(total_data);
             double total_written_data = std::get<1>(total_data);
+            if (num_cores % num_cores_per_node) {
+                std::cerr << "Num cores per node does not divide total number of cores!" << "\n";
+                exit(1);
+            }
+            unsigned long num_nodes = num_cores / num_cores_per_node;
 
-            fprintf(stderr, "PLATFORM:\n");
-            fprintf(stderr, "  - %d %d-core nodes\n", num_nodes, num_cores_per_node);
+            fprintf(stderr, "PLATFORM %s:\n", platform_spec.c_str());
+            fprintf(stderr, "  - %lu %lu-core nodes\n", num_nodes, num_cores_per_node);
             fprintf(stderr, "  - task execution time: %.2lf sec\n", task_execution_time);
             fprintf(stderr, "  - per-node I/O read rate: %.2lf MB/sec\n", io_read_speed_per_node / MBYTE);
             fprintf(stderr, "  - per-node I/O write rate: %.2lf MB/sec\n", io_write_speed_per_node / MBYTE);
@@ -289,7 +306,19 @@ int main(int argc, char **argv) {
             fprintf(stderr, "\nNAIVE / NO CONCURRENCY: %.1lf seconds\n", estimate1);
             fprintf(stderr, "NAIVE / CONCURRENCY   : %.1lf seconds\n", estimate2);
             fprintf(stderr, "CRITICAL PATH         : %.1lf seconds\n", estimate3);
-            fprintf(stdout, "%s-%s:%.1lf,%.1lf,%.1lf\n", platform_spec.c_str(), tt.first.c_str(), estimate1, estimate2, estimate3);
+
+            // Code to print out CSV stuff
+            std::vector<std::string> tokens;
+            boost::split(tokens, workflow_file, boost::is_any_of("/"));
+            std::string after_slash = tokens.at(tokens.size() -1);
+            boost::split(tokens, after_slash, boost::is_any_of("-"));
+            fprintf(stdout, "%s,%s,%s,%s,%.2lf,%.2lf,%.2lf,%s,\n",
+                    tokens.at(0).c_str(),
+                    tokens.at(1).c_str(),
+                    tokens.at(2).c_str(),
+                    tt.first.c_str(),
+                    estimate1, estimate2, estimate3,
+                    platform_spec.c_str());
         }
 
     }

@@ -44,7 +44,7 @@ std::map<std::string, struct platform_spec> platform_specs = {
     },
     { "Piz Daint",
         {
-                20,
+                36,
                 7.132, // time python3 wfbench.py --percent-cpu 0.9 --cpu-work 500 abc
                 53.690, // time python3 wfbench.py --percent-cpu 0.1 --cpu-work 500 abc
                 37.3 * MBYTE, // time dd of=/dev/zero if=test-file iflag=direct bs=128k count=4k
@@ -279,11 +279,8 @@ int main(int argc, char **argv) {
             auto total_data = compute_total_data(workflow);
             double total_read_data = std::get<0>(total_data);
             double total_written_data = std::get<1>(total_data);
-            if (num_cores % num_cores_per_node) {
-                std::cerr << "Num cores per node does not divide total number of cores!" << "\n";
-                exit(1);
-            }
-            unsigned long num_nodes = num_cores / num_cores_per_node;
+
+            unsigned long num_nodes = std::ceil((double)num_cores / (double)num_cores_per_node);
 
             fprintf(stderr, "PLATFORM %s:\n", platform_spec.c_str());
             fprintf(stderr, "  - %lu %lu-core nodes\n", num_nodes, num_cores_per_node);

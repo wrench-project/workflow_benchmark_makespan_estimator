@@ -30,13 +30,11 @@ set(SOURCE_FILES
 # generating the executable
 add_executable(workflow_benchmark_makespan_estimator ${SOURCE_FILES})
 
-find_library(PUGIXML_LIBRARY NAMES pugixml)
 
 target_link_libraries(workflow_benchmark_makespan_estimator
             ${WRENCH_LIBRARY}
             ${SimGrid_LIBRARY}
             ${Boost_LIBRARIES}
-            ${PUGIXML_LIBRARY}
             )
 
 install(TARGETS workflow_benchmark_makespan_estimator DESTINATION bin)

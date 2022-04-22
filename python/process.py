@@ -83,12 +83,12 @@ def construct_db(real_results_file, model_results_file):
                 db[i]["estimate3"] = data["estimate3"]
                 break
 
-    # remove incomplete entries
-    cleanedup = []
-    for data in db:
-        if data["estimate1"] != 0:
-            cleanedup.append(data)
-    db = cleanedup
+    # # remove incomplete entries
+    # cleanedup = []
+    # for data in db:
+    #     if data["estimate1"] != 0:
+    #         cleanedup.append(data)
+    # db = cleanedup
     return
 
 
@@ -135,6 +135,8 @@ def print_ranking_mistakes():
                         except:
                             print("           NO RESULTS")
                             continue
+                        if (estimate1_machine1 <= 0) or (estimate1_machine2 <= 0):
+                            continue
                         real_faster = real_machine1 < real_machine2
                         estimate1_faster = estimate1_machine1 < estimate1_machine2
                         estimate2_faster = estimate2_machine1 < estimate2_machine2
@@ -154,7 +156,6 @@ def print_ranking_mistakes():
     print("ESTIMATE 3: WRONG " + str(estimate3_wrong) + "  RIGHT " + str(estimate3_right))
 
 
-
 def main():
     if len(sys.argv) != 3:
         sys.stderr.write("Usage: " + sys.argv[0] + " <real.csv> <model.csv>\n")
@@ -162,11 +163,9 @@ def main():
 
     # Construct DB of results
     construct_db(sys.argv[1], sys.argv[2])
-    # print(db)
 
+    # Print Ranking Mistakes
     print_ranking_mistakes()
-
-
 
 # x = list(range(0,len(real)))
 #

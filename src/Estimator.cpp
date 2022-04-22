@@ -47,8 +47,8 @@ std::map<std::string, struct platform_spec> platform_specs = {
                 36,
                 7.132, // time python3 wfbench.py --percent-cpu 0.9 --cpu-work 500 abc
                 53.690, // time python3 wfbench.py --percent-cpu 0.1 --cpu-work 500 abc
-                37.3 * MBYTE, // time dd of=/dev/zero if=test-file iflag=direct bs=128k count=4k
-                9.4 * MBYTE // time dd if=/dev/zero of=test-file oflag=direct bs=128k count=4k
+                45.3 * MBYTE, // time dd of=/dev/zero if=test-file iflag=direct bs=128k count=4k
+                13.3 * MBYTE // time dd if=/dev/zero of=test-file oflag=direct bs=128k count=4k
         }
     }
 };
@@ -266,7 +266,8 @@ int main(int argc, char **argv) {
             exit(1);
         }
 
-        std::map<std::string, double> task_types = {{"cpu", cpu_task_execution_time}, {"mem", mem_task_execution_time}};
+//        std::map<std::string, double> task_types = {{"cpu", cpu_task_execution_time}, {"mem", mem_task_execution_time}};
+        std::map<std::string, double> task_types = {{"cpu", cpu_task_execution_time}};
         for (auto const &tt : task_types) {
 
             double task_execution_time = tt.second;
@@ -309,7 +310,7 @@ int main(int argc, char **argv) {
             boost::split(tokens, workflow_file, boost::is_any_of("/"));
             std::string after_slash = tokens.at(tokens.size() -1);
             boost::split(tokens, after_slash, boost::is_any_of("-"));
-            fprintf(stdout, "%s,%s,%s,%s,%.2lf,%.2lf,%.2lf,%s,\n",
+            fprintf(stdout, "\n\nCSV,%s,%s,%s,%s,%.2lf,%.2lf,%.2lf,%s,\n",
                     tokens.at(0).c_str(),
                     tokens.at(1).c_str(),
                     tokens.at(2).c_str(),

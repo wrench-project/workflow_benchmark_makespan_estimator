@@ -6,7 +6,7 @@
 
 
 ```
-./workflow_benchmark_makespan_estimator --workflow ../data/blast-benchmark-200.json --flops_per_unit_of_cpu_work 100Gf --platform_spec summit --num_cores_per_node 10 --num_nodes 10 
+./workflow_benchmark_makespan_estimator --workflow ../data/blast-benchmark-200.json  --platform_spec Summit --num_cores 10
 ```
 
 Script to compute the value to pass as a value to the `--flops_per_unit_of_cpu_work` command-line option of the estimator:

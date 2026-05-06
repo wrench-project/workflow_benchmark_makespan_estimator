@@ -33,6 +33,7 @@ std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSO
     std::set<std::string> ignored_transfer_jobs;
 
     auto workflow = wrench::Workflow::createWorkflow();
+    workflow->enableTopBottomLevelDynamicUpdates(false);
 
     //handle the exceptions of opening the json file
     file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
@@ -83,9 +84,9 @@ std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSO
                     std::shared_ptr<wrench::DataFile> workflow_file = nullptr;
                     // Add the file
                     try {
-                        workflow_file = workflow->addFile(id, size);
+                        workflow_file = wrench::Simulation::addFile(id, size);
                     } catch (const std::invalid_argument &ia) {
-                        workflow_file = workflow->getFileByID(id);
+                        workflow_file = wrench::Simulation::getFileByID(id);
                     }
                     if (link == "input") {
                         task->addInputFile(workflow_file);
@@ -118,6 +119,11 @@ std::shared_ptr<wrench::Workflow> WfCommonsWorkflowParser::createWorkflowFromJSO
         }
     }
     file.close();
+
+    std::cerr << "UPDATING ALL TOP LEVELS\n";
+    workflow->enableTopBottomLevelDynamicUpdates(true);
+    std::cerr << "UPDATED ALL TOP LEVELS\n";
+    workflow->updateAllTopBottomLevels();
 
     return workflow;
 }

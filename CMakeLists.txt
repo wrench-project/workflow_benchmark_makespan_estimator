@@ -13,10 +13,11 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMakeModules/")
 # Find WRENCH, SimGrid, and Boost
 find_package(WRENCH REQUIRED)
 find_package(SimGrid REQUIRED)
+find_package(FSMod REQUIRED)
 find_package(Boost COMPONENTS program_options REQUIRED)
 
 # include directories
-include_directories(include/ /usr/local/include/ /opt/local/include/ ${WRENCH_INCLUDE_DIR} ${SimGrid_INCLUDE_DIR} ${Boost_INCLUDE_DIR})
+include_directories(include/ /usr/local/include/ /opt/local/include/ ${WRENCH_INCLUDE_DIR} ${SimGrid_INCLUDE_DIR} ${FSMOD_INCLUDE_DIR} ${Boost_INCLUDE_DIR})
 
 # source files
 set(SOURCE_FILES
@@ -34,6 +35,7 @@ add_executable(workflow_benchmark_makespan_estimator ${SOURCE_FILES})
 target_link_libraries(workflow_benchmark_makespan_estimator
             ${WRENCH_LIBRARY}
             ${SimGrid_LIBRARY}
+            ${FSMOD_LIBRARY}
             ${Boost_LIBRARIES}
             )
 

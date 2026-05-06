@@ -36,7 +36,7 @@
 #  Since WRENCH header files require C++17, so we set CMAKE_CXX_STANDARD to 17.
 #    Change this variable in your own file if you need a later standard.
 
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.12)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -82,7 +82,7 @@ if (WRENCH_FOUND AND NOT CMAKE_VERSION VERSION_LESS 2.8.12)
             )
     # We need C++17, so check for it just in case the user removed it since compiling WRENCH
     if (NOT CMAKE_VERSION VERSION_LESS 3.8)
-        # 3.8+ allows us to simply require C++14 (or higher)
+        # 3.8+ allows us to simply require C++17 (or higher)
         set_property(TARGET WRENCH::WRENCH PROPERTY INTERFACE_COMPILE_FEATURES cxx_std_17)
     elseif (NOT CMAKE_VERSION VERSION_LESS 3.1)
         # 3.1+ is similar but for certain features. We pick just one
@@ -101,7 +101,7 @@ int main(){}
         if (NOT _WRENCH_CXX17_ENABLED)
             message(WARNING "C++17 is required to use WRENCH. Enable it with e.g. -std=c++17")
         endif ()
-        unset(_WRENCH_CXX17_ENABLED CACHE)
+        unset(_WRENCH_CXX14_ENABLED CACHE)
     endif ()
 endif ()
 
